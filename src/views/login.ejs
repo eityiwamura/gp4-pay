@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Entrar' }) %></head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="brand">GP4<span class="dot">·</span>Taxas</div>
+      <p class="tag">Cadastro de taxas e calculadora de economia</p>
+      <% if (error) { %>
+        <div class="error-msg"><%= error %></div>
+      <% } %>
+      <form method="POST" action="/login">
+        <div class="form-row">
+          <label>E-mail</label>
+          <input type="email" name="email" required autofocus>
+        </div>
+        <div class="form-row">
+          <label>Senha</label>
+          <input type="password" name="password" required>
+        </div>
+        <button class="btn" type="submit" style="width:100%;">Entrar</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

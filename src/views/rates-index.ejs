@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Cadastro de Taxas' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'rates' }) %>
+    <main class="main-content">
+      <div class="container">
+        <h1>Cadastro de Taxas</h1>
+        <p class="subtitle">Escolha a categoria, a bandeira e o prazo para editar a tabela de taxas GP4.</p>
+
+        <% categories.forEach(cat => { %>
+          <div class="card">
+            <h2 style="margin-bottom:14px;"><%= cat.name %></h2>
+
+            <div class="pill-group brand-pill-group" data-category="<%= cat.code %>" style="margin-bottom:16px;">
+              <% brands.forEach((b, i) => { %>
+                <button type="button" data-value="<%= b.code %>" class="<%= i === 0 ? 'active' : '' %>"><%= b.name %></button>
+              <% }) %>
+            </div>
+
+            <% brands.forEach((b, bi) => { %>
+              <div class="grid brand-tiles" data-category="<%= cat.code %>" data-brand="<%= b.code %>" <%= bi === 0 ? '' : 'style="display:none;"' %>>
+                <% allowedPrazosFn(cat.code, prazos).forEach(prazo => { %>
+                  <a href="/rates/<%= cat.code %>/<%= prazo.code %>/<%= b.code %>" class="tile">
+                    <span class="icon">📋</span>
+                    <div class="tile-title"><%= prazo.name %></div>
+                    <div class="tile-desc">Débito + Crédito 1x a 24x · <%= b.name %> · <%= prazo.period_label %></div>
+                  </a>
+                <% }) %>
+              </div>
+            <% }) %>
+          </div>
+        <% }) %>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/rates-index.js"></script>
+</body>
+</html>

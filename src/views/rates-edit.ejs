@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: `Taxas ${category.name} ${brand.name} ${prazo.name}` }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'rates' }) %>
+    <main class="main-content">
+      <div class="container">
+        <p class="subtitle" style="margin-bottom:6px;"><a href="/rates" style="color:var(--primary);text-decoration:none;font-weight:600;">← Voltar</a></p>
+        <h1>Taxas GP4 · <%= category.name %> · <%= brand.name %> · <%= prazo.name %></h1>
+        <p class="subtitle">Informe as taxas em porcentagem (ex: 1,98). Deixe em branco para remover uma taxa cadastrada.</p>
+
+        <% if (saved) { %>
+          <div class="success-msg">Taxas salvas com sucesso.</div>
+        <% } %>
+
+        <div class="card no-print" style="padding:16px 20px;">
+          <div class="form-row-inline">
+            <div>
+              <label style="margin-bottom:8px;">Bandeira</label>
+              <div class="pill-group">
+                <% brands.forEach(b => { %>
+                  <a href="/rates/<%= category.code %>/<%= prazo.code %>/<%= b.code %>" style="text-decoration:none;">
+                    <button type="button" class="<%= b.code === brand.code ? 'active' : '' %>"><%= b.name %></button>
+                  </a>
+                <% }) %>
+              </div>
+            </div>
+            <div>
+              <label style="margin-bottom:8px;">Prazo</label>
+              <div class="pill-group">
+                <% allowedPrazosFn(category.code, prazos).forEach(p => { %>
+                  <a href="/rates/<%= category.code %>/<%= p.code %>/<%= brand.code %>" style="text-decoration:none;">
+                    <button type="button" class="<%= p.code === prazo.code ? 'active' : '' %>"><%= p.name %></button>
+                  </a>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <form method="POST" action="/rates/<%= category.code %>/<%= prazo.code %>/<%= brand.code %>">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo de pagamento</th>
+                  <th class="mono">Taxa GP4 (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% rows.forEach(row => { %>
+                  <tr>
+                    <td><%= row.name %></td>
+                    <td>
+                      <input type="text" inputmode="decimal" class="mono" style="text-align:right;max-width:140px;margin-left:auto;"
+                        name="rate_<%= row.id %>"
+                        value="<%= row.gp4_rate != null ? row.gp4_rate.toFixed(2).replace('.', ',') : '' %>"
+                        placeholder="0,00">
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+            <div style="margin-top:20px;">
+              <button class="btn accent" type="submit">Salvar taxas</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

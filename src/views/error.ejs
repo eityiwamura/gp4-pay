@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Erro' }) %></head>
+<body>
+  <% if (typeof user !== 'undefined' && user !== null) { %>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: '' }) %>
+    <main class="main-content">
+      <div class="container">
+        <div class="card" style="text-align:center;padding:48px;">
+          <h1>Ops</h1>
+          <p class="subtitle"><%= message %></p>
+          <a href="/" class="btn">Voltar ao início</a>
+        </div>
+      </div>
+    </main>
+  </div>
+  <% } else { %>
+  <div class="container">
+    <div class="card" style="text-align:center;padding:48px;">
+      <h1>Ops</h1>
+      <p class="subtitle"><%= message %></p>
+      <a href="/" class="btn">Voltar ao início</a>
+    </div>
+  </div>
+  <% } %>
+</body>
+</html>

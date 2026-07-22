@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Calculadora de Economia' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'calculator' }) %>
+    <main class="main-content">
+      <div class="container">
+        <h1>Calculadora de Economia</h1>
+        <p class="subtitle">Compare as taxas da GP4 com o que o cliente usa hoje e mostre quanto ele economiza.</p>
+
+        <div class="card no-print">
+          <div class="form-row-inline">
+            <div>
+              <label>Categoria</label>
+              <div class="pill-group" id="categoryGroup">
+                <% categories.forEach((c, i) => { %>
+                  <button type="button" data-value="<%= c.code %>" class="<%= i === 0 ? 'active' : '' %>"><%= c.name %></button>
+                <% }) %>
+              </div>
+            </div>
+            <div>
+              <label>Prazo de recebimento</label>
+              <div class="pill-group" id="prazoGroup">
+                <% prazos.forEach((p, i) => { %>
+                  <button type="button" data-value="<%= p.code %>" class="<%= i === 0 ? 'active' : '' %>"><%= p.name %></button>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row" style="max-width:360px;margin-top:18px;">
+            <label id="volumeLabel">Valor médio de vendas</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" inputmode="decimal" id="volumeInput" class="mono" placeholder="0,00" style="flex:1;">
+              <div class="pill-group" id="periodGroup" style="flex-shrink:0;">
+                <button type="button" data-value="day">Por dia</button>
+                <button type="button" data-value="month" class="active">Por mês</button>
+              </div>
+            </div>
+            <div class="helper" id="volumeHelper"></div>
+          </div>
+
+          <div class="form-row" style="margin-top:18px;">
+            <label>Bandeira</label>
+            <div class="pill-group" id="brandGroup">
+              <% brands.forEach((b, i) => { %>
+                <button type="button" data-value="<%= b.code %>" class="<%= i === 0 ? 'active' : '' %>"><%= b.name %></button>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-card" id="summaryCard" style="display:none;">
+          <div>
+            <div class="stat-label">Categoria · Bandeira</div>
+            <div class="stat-value" style="font-size:16px;color:white;" id="summaryCatPrazo">-</div>
+          </div>
+          <div>
+            <div class="stat-label">Prazo de recebimento</div>
+            <div class="stat-value" style="font-size:16px;color:white;" id="summaryPrazo">-</div>
+          </div>
+          <div>
+            <div class="stat-label" id="summaryVolumeLabel">Volume informado</div>
+            <div class="stat-value" id="summaryVolume">R$ 0,00</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;" class="no-print">
+            <h2 style="margin:0;">Comparativo por tipo de pagamento</h2>
+            <button class="btn secondary" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+          </div>
+          <p class="helper" style="margin-bottom:14px;">Preencha "% de Vendas" com a fatia do faturamento do cliente que passa por cada tipo de pagamento. Se ele não usa determinado tipo, deixe em branco.</p>
+          <table id="ratesTable">
+            <thead>
+              <tr>
+                <th>Tipo de pagamento</th>
+                <th class="mono">Taxa GP4</th>
+                <th class="mono">Taxa cliente atual</th>
+                <th class="mono">% de Vendas</th>
+                <th class="mono">Diferença</th>
+                <th class="mono" id="colPeriod">Economia</th>
+                <th class="mono">Economia em 1 ano</th>
+              </tr>
+            </thead>
+            <tbody id="ratesBody">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Carregando taxas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="summary-card" id="totalsCard" style="display:none;">
+          <div>
+            <div class="stat-label">% de vendas alocado</div>
+            <div class="stat-value" id="totalPercent">0,00%</div>
+          </div>
+          <div>
+            <div class="stat-label" id="totalPeriodLabel">Economia total no período</div>
+            <div class="stat-value" id="totalPeriodSavings">R$ 0,00</div>
+          </div>
+          <div>
+            <div class="stat-label">Economia total em 1 ano</div>
+            <div class="stat-value" id="totalAnnualSavings">R$ 0,00</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>window.RESTRICTED_PRAZOS_BY_CATEGORY = <%- JSON.stringify(restrictedPrazosByCategory) %>;</script>
+  <script src="/js/calculator.js"></script>
+</body>
+</html>
