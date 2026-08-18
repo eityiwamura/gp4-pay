@@ -1,10 +1,12 @@
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const config = require('./config');
 const pool = require('./db');
 const { RESTRICTED_CODES_BY_CATEGORY } = require('./lib/paymentTypeRules');
 const { RESTRICTED_PRAZOS_BY_CATEGORY } = require('./lib/prazoRules');
+
+const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 const PAYMENT_TYPES = [
   { code: 'DEB', name: 'Débito', sort_order: 0 },
@@ -20,10 +22,12 @@ const CATEGORIES = [
   { code: 'SITE', name: 'SITE' },
 ];
 
+// Sem period_label / annual_multiplier: eram código morto e enganavam (ver 006).
+// A projeção anual vem do período do volume informado, não do prazo de recebimento.
 const PRAZOS = [
-  { code: 'D1', name: 'D+1', period_label: 'por dia', annual_multiplier: 365 },
-  { code: 'D30', name: 'D+30', period_label: 'por mês', annual_multiplier: 12 },
-  { code: 'D0', name: 'D+0', period_label: 'no mesmo dia', annual_multiplier: 365 },
+  { code: 'D1', name: 'D+1' },
+  { code: 'D30', name: 'D+30' },
+  { code: 'D0', name: 'D+0' },
 ];
 
 const BRANDS = [
@@ -32,8 +36,15 @@ const BRANDS = [
   { code: 'ELO', name: 'Elo', sort_order: 2 },
 ];
 
-// Taxas GP4 extraídas do "Comparativo_de_Taxas_Cliente_03jul26.xlsx" (planilha de referência do Eity)
-// Usadas apenas como carga inicial (mesmo valor para as 3 bandeiras) - podem ser editadas por bandeira na tela de Cadastro de Taxas.
+// Meios sem bandeira e sem prazo. O PIX cai sempre em D+1 e não parcela, então não
+// cabe na tabela `rates` — mora em flat_rates. A taxa em si NÃO é semeada: quem
+// preenche é o admin, na tela de Cadastro de Taxas.
+const FLAT_METHODS = [
+  { code: 'PIX', name: 'PIX', note: 'Recebimento em D+1', sort_order: 0 },
+];
+
+// Taxas GP4 extraídas do "Comparativo_de_Taxas_Cliente_03jul26.xlsx" (planilha de referência).
+// Carga inicial apenas: só é aplicada quando a tabela `rates` está vazia.
 const SEED_RATES = {
   SUB: {
     D1: {
@@ -68,115 +79,213 @@ const SEED_RATES = {
   },
 };
 
-async function run() {
-  const client = await pool.connect();
+// O container sobe junto com o Postgres; nos primeiros segundos a conexão ainda falha.
+async function waitForDatabase(attempts = 20, delayMs = 3000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.log(`Banco ainda não respondeu (${i}/${attempts}). Nova tentativa em ${delayMs / 1000}s...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
+async function ensureMigrationsTable(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      filename VARCHAR(200) PRIMARY KEY,
+      applied_at TIMESTAMP NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function alreadyApplied(client, name) {
+  const { rows } = await client.query('SELECT 1 FROM schema_migrations WHERE filename = $1', [name]);
+  return rows.length > 0;
+}
+
+// Executa uma etapa exatamente uma vez na vida do banco, registrando-a em schema_migrations.
+async function runOnce(client, name, fn) {
+  if (await alreadyApplied(client, name)) return false;
+  await client.query('BEGIN');
   try {
-    console.log('Aplicando schema (001_init)...');
-    const sql001 = fs.readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
-    await client.query(sql001);
+    await fn(client);
+    await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [name]);
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
+}
 
-    console.log('Aplicando schema (002_add_brands)...');
-    const sql002 = fs.readFileSync(path.join(__dirname, '..', 'migrations', '002_add_brands.sql'), 'utf8');
-    await client.query(sql002);
+async function applySqlMigrations(client) {
+  const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    const applied = await runOnce(client, file, async c => {
+      console.log(`  aplicando ${file}...`);
+      await c.query(fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8'));
+    });
+    if (!applied) console.log(`  ${file} já aplicada, pulando.`);
+  }
+}
 
-    console.log('Semeando categorias, prazos, bandeiras e tipos de pagamento...');
-    for (const c of CATEGORIES) {
-      await client.query(
-        `INSERT INTO categories (code, name) VALUES ($1, $2)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name`,
-        [c.code, c.name]
-      );
-    }
-    for (const p of PRAZOS) {
-      await client.query(
-        `INSERT INTO prazos (code, name, period_label, annual_multiplier) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, period_label = EXCLUDED.period_label, annual_multiplier = EXCLUDED.annual_multiplier`,
-        [p.code, p.name, p.period_label, p.annual_multiplier]
-      );
-    }
-    for (const b of BRANDS) {
-      await client.query(
-        `INSERT INTO payment_brands (code, name, sort_order) VALUES ($1, $2, $3)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order`,
-        [b.code, b.name, b.sort_order]
-      );
-    }
-    for (const pt of PAYMENT_TYPES) {
-      await client.query(
-        `INSERT INTO payment_types (code, name, sort_order) VALUES ($1, $2, $3)
-         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order`,
-        [pt.code, pt.name, pt.sort_order]
-      );
-    }
+async function seedLookups(client) {
+  for (const c of CATEGORIES) {
+    await client.query(
+      `INSERT INTO categories (code, name) VALUES ($1, $2)
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name`,
+      [c.code, c.name]
+    );
+  }
+  for (const p of PRAZOS) {
+    await client.query(
+      `INSERT INTO prazos (code, name) VALUES ($1, $2)
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name`,
+      [p.code, p.name]
+    );
+  }
+  for (const b of BRANDS) {
+    await client.query(
+      `INSERT INTO payment_brands (code, name, sort_order) VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order`,
+      [b.code, b.name, b.sort_order]
+    );
+  }
+  for (const pt of PAYMENT_TYPES) {
+    await client.query(
+      `INSERT INTO payment_types (code, name, sort_order) VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order`,
+      [pt.code, pt.name, pt.sort_order]
+    );
+  }
+  for (const m of FLAT_METHODS) {
+    await client.query(
+      `INSERT INTO flat_payment_methods (code, name, note, sort_order) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, note = EXCLUDED.note,
+                                        sort_order = EXCLUDED.sort_order`,
+      [m.code, m.name, m.note, m.sort_order]
+    );
+  }
+}
 
-    const catRows = await client.query('SELECT id, code FROM categories');
-    const prazoRows = await client.query('SELECT id, code FROM prazos');
-    const ptRows = await client.query('SELECT id, code FROM payment_types');
-    const brandRows = await client.query('SELECT id, code FROM payment_brands');
-    const catId = Object.fromEntries(catRows.rows.map(r => [r.code, r.id]));
-    const prazoId = Object.fromEntries(prazoRows.rows.map(r => [r.code, r.id]));
-    const ptId = Object.fromEntries(ptRows.rows.map(r => [r.code, r.id]));
-    const brandId = Object.fromEntries(brandRows.rows.map(r => [r.code, r.id]));
+async function seedRatesIfEmpty(client) {
+  const { rows } = await client.query('SELECT count(*)::int AS n FROM rates');
+  if (rows[0].n > 0) {
+    console.log(`Tabela de taxas já tem ${rows[0].n} registro(s) — carga inicial não será aplicada.`);
+    return;
+  }
 
-    // Taxas cadastradas ANTES da bandeira existir (brand_id nulo) viram "Master" automaticamente,
-    // preservando qualquer ajuste que já tenha sido feito manualmente na tela de Cadastro de Taxas.
-    const orphanCount = await client.query('SELECT count(*) FROM rates WHERE brand_id IS NULL');
-    if (Number(orphanCount.rows[0].count) > 0) {
-      console.log(`Migrando ${orphanCount.rows[0].count} taxa(s) existente(s) para a bandeira Master...`);
-      await client.query('UPDATE rates SET brand_id = $1 WHERE brand_id IS NULL', [brandId.MASTER]);
-    }
+  console.log('Tabela de taxas vazia: aplicando a carga inicial da planilha de referência...');
+  const ids = async (table) => Object.fromEntries(
+    (await client.query(`SELECT id, code FROM ${table}`)).rows.map(r => [r.code, r.id])
+  );
+  const catId = await ids('categories');
+  const prazoId = await ids('prazos');
+  const ptId = await ids('payment_types');
+  const brandId = await ids('payment_brands');
 
-    console.log('Removendo taxas restritas (ex: 19x-24x na categoria SITE)...');
-    for (const [catCode, restrictedCodes] of Object.entries(RESTRICTED_CODES_BY_CATEGORY)) {
-      if (!catId[catCode] || restrictedCodes.length === 0) continue;
-      const del = await client.query(
-        `DELETE FROM rates WHERE category_id = $1
-         AND payment_type_id IN (SELECT id FROM payment_types WHERE code = ANY($2))`,
-        [catId[catCode], restrictedCodes]
-      );
-      if (del.rowCount > 0) console.log(`  ${del.rowCount} taxa(s) removida(s) de ${catCode}.`);
-    }
-
-    console.log('Removendo prazos restritos (ex: D+0 na categoria SUB)...');
-    for (const [catCode, restrictedPrazoCodes] of Object.entries(RESTRICTED_PRAZOS_BY_CATEGORY)) {
-      if (!catId[catCode] || restrictedPrazoCodes.length === 0) continue;
-      const del = await client.query(
-        `DELETE FROM rates WHERE category_id = $1
-         AND prazo_id IN (SELECT id FROM prazos WHERE code = ANY($2))`,
-        [catId[catCode], restrictedPrazoCodes]
-      );
-      if (del.rowCount > 0) console.log(`  ${del.rowCount} taxa(s) removida(s) de ${catCode}.`);
-    }
-
-    console.log('Carregando taxas GP4 iniciais por bandeira (a partir da planilha de referência)...');
+  let inserted = 0;
+  await client.query('BEGIN');
+  try {
     for (const brand of BRANDS) {
       for (const [catCode, prazos] of Object.entries(SEED_RATES)) {
         for (const [prazoCode, rates] of Object.entries(prazos)) {
           for (const [ptCode, rate] of Object.entries(rates)) {
-            await client.query(
+            const r = await client.query(
               `INSERT INTO rates (category_id, prazo_id, payment_type_id, brand_id, gp4_rate)
                VALUES ($1, $2, $3, $4, $5)
                ON CONFLICT (category_id, prazo_id, payment_type_id, brand_id) DO NOTHING`,
               [catId[catCode], prazoId[prazoCode], ptId[ptCode], brandId[brand.code], rate]
             );
+            inserted += r.rowCount;
           }
         }
       }
     }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
+  console.log(`  ${inserted} taxa(s) carregada(s).`);
+}
 
-    if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
-      const existing = await client.query('SELECT id FROM users WHERE email = $1', [process.env.ADMIN_EMAIL]);
-      if (existing.rows.length === 0) {
-        console.log('Criando usuário admin inicial...');
-        const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
-        await client.query(
-          `INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, 'admin')`,
-          [process.env.ADMIN_NAME || 'Admin', process.env.ADMIN_EMAIL, hash]
-        );
-      } else {
-        console.log('Usuário admin já existe, pulando criação.');
-      }
+async function ensureAdminUser(client) {
+  const { email, password, name } = config.admin;
+  if (!email || !password) {
+    const { rows } = await client.query(`SELECT count(*)::int AS n FROM users WHERE role='admin' AND active`);
+    if (rows[0].n === 0) {
+      console.warn('ATENÇÃO: não há administrador ativo e ADMIN_EMAIL/ADMIN_PASSWORD não foram definidos.');
     }
+    return;
+  }
+
+  const existing = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+  if (existing.rows.length > 0) {
+    console.log('Usuário admin já existe, pulando criação.');
+    return;
+  }
+
+  console.log(`Criando usuário admin inicial (${email})...`);
+  const hash = await bcrypt.hash(password, 10);
+  await client.query(
+    `INSERT INTO users (name, email, password_hash, role, active) VALUES ($1, $2, $3, 'admin', true)`,
+    [name, email, hash]
+  );
+}
+
+async function run() {
+  await waitForDatabase();
+
+  const client = await pool.connect();
+  try {
+    await ensureMigrationsTable(client);
+
+    console.log('Aplicando migrações SQL...');
+    await applySqlMigrations(client);
+
+    console.log('Semeando categorias, prazos, bandeiras e meios de pagamento...');
+    await seedLookups(client);
+
+    // Taxas cadastradas antes da bandeira existir (brand_id nulo) viram "Master",
+    // preservando ajustes já feitos manualmente. Roda uma única vez.
+    await runOnce(client, 'data/001_taxas_sem_bandeira_viram_master', async c => {
+      const { rowCount } = await c.query(
+        `UPDATE rates SET brand_id = (SELECT id FROM payment_brands WHERE code='MASTER')
+         WHERE brand_id IS NULL`
+      );
+      if (rowCount > 0) console.log(`  ${rowCount} taxa(s) sem bandeira migrada(s) para Master.`);
+    });
+
+    // Limpeza das combinações que a regra de negócio não permite (19x-24x na SITE,
+    // D+0 na SUB). É destrutiva, então roda uma única vez — e não a cada deploy.
+    await runOnce(client, 'data/002_limpar_combinacoes_restritas', async c => {
+      for (const [catCode, codes] of Object.entries(RESTRICTED_CODES_BY_CATEGORY)) {
+        if (codes.length === 0) continue;
+        const del = await c.query(
+          `DELETE FROM rates WHERE category_id = (SELECT id FROM categories WHERE code=$1)
+           AND payment_type_id IN (SELECT id FROM payment_types WHERE code = ANY($2))`,
+          [catCode, codes]
+        );
+        if (del.rowCount > 0) console.log(`  ${del.rowCount} taxa(s) removida(s) de ${catCode} (tipo restrito).`);
+      }
+      for (const [catCode, codes] of Object.entries(RESTRICTED_PRAZOS_BY_CATEGORY)) {
+        if (codes.length === 0) continue;
+        const del = await c.query(
+          `DELETE FROM rates WHERE category_id = (SELECT id FROM categories WHERE code=$1)
+           AND prazo_id IN (SELECT id FROM prazos WHERE code = ANY($2))`,
+          [catCode, codes]
+        );
+        if (del.rowCount > 0) console.log(`  ${del.rowCount} taxa(s) removida(s) de ${catCode} (prazo restrito).`);
+      }
+    });
+
+    await seedRatesIfEmpty(client);
+    await ensureAdminUser(client);
 
     console.log('Migração concluída com sucesso.');
   } finally {

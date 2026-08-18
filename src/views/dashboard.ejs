@@ -6,23 +6,38 @@
     <%- include('partials/sidebar', { active: 'home' }) %>
     <main class="main-content">
       <div class="container">
-        <h1>Olá, <%= user.name.split(' ')[0] %> 👋</h1>
+        <h1>Olá, <%= user.name.split(' ')[0] %></h1>
         <p class="subtitle">O que você precisa fazer agora?</p>
 
         <div class="grid">
-          <a href="/calculator" class="tile">
-            <span class="icon">🧮</span>
-            <div class="tile-title">Calculadora de economia</div>
-            <div class="tile-desc">Compare as taxas da GP4 com o que o cliente já paga hoje e mostre a economia.</div>
-          </a>
-          <% if (user.role === 'admin') { %>
-          <a href="/rates" class="tile">
-            <span class="icon">⚙️</span>
-            <div class="tile-title">Cadastro de taxas</div>
-            <div class="tile-desc">Atualize as taxas GP4 por categoria (SUB/SITE) e prazo (D+1, D+30, D+0).</div>
-          </a>
+          <% if (can(user, 'calculator')) { %>
+            <a href="/calculator" class="tile">
+              <%- include('partials/icon', { name: 'calculator' }) %>
+              <div class="tile-title">Calculadora de economia</div>
+              <div class="tile-desc">Compare as taxas da GP4 com o que o cliente já paga hoje e mostre a economia.</div>
+            </a>
+          <% } %>
+          <% if (can(user, 'rates')) { %>
+            <a href="/rates" class="tile">
+              <%- include('partials/icon', { name: 'rates' }) %>
+              <div class="tile-title">Cadastro de taxas</div>
+              <div class="tile-desc">Atualize as taxas GP4 por categoria (SUB/SITE), bandeira e prazo.</div>
+            </a>
+          <% } %>
+          <% if (can(user, 'users')) { %>
+            <a href="/users" class="tile">
+              <%- include('partials/icon', { name: 'users' }) %>
+              <div class="tile-title">Usuários</div>
+              <div class="tile-desc">Cadastre vendedores e defina quais telas cada um pode acessar.</div>
+            </a>
           <% } %>
         </div>
+
+        <% if (!can(user, 'calculator') && !can(user, 'rates') && !can(user, 'users')) { %>
+          <div class="card">
+            <p class="subtitle" style="margin:0;">Sua conta ainda não tem nenhuma tela liberada. Fale com o administrador.</p>
+          </div>
+        <% } %>
       </div>
     </main>
   </div>

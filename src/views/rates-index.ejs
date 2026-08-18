@@ -6,8 +6,13 @@
     <%- include('partials/sidebar', { active: 'rates' }) %>
     <main class="main-content">
       <div class="container">
-        <h1>Cadastro de Taxas</h1>
-        <p class="subtitle">Escolha a categoria, a bandeira e o prazo para editar a tabela de taxas GP4.</p>
+        <div class="page-head">
+          <div>
+            <h1>Cadastro de Taxas</h1>
+            <p class="subtitle" style="margin-bottom:0;">Escolha a categoria, a bandeira e o prazo para editar a tabela de taxas GP4.</p>
+          </div>
+          <a href="/rates/historico" class="btn secondary">Ver histórico</a>
+        </div>
 
         <% categories.forEach(cat => { %>
           <div class="card">
@@ -23,15 +28,41 @@
               <div class="grid brand-tiles" data-category="<%= cat.code %>" data-brand="<%= b.code %>" <%= bi === 0 ? '' : 'style="display:none;"' %>>
                 <% allowedPrazosFn(cat.code, prazos).forEach(prazo => { %>
                   <a href="/rates/<%= cat.code %>/<%= prazo.code %>/<%= b.code %>" class="tile">
-                    <span class="icon">📋</span>
+                    <%- include('partials/icon', { name: 'rates' }) %>
                     <div class="tile-title"><%= prazo.name %></div>
-                    <div class="tile-desc">Débito + Crédito 1x a 24x · <%= b.name %> · <%= prazo.period_label %></div>
+                    <div class="tile-desc"><%= installmentsLabel[cat.code] %> · <%= b.name %></div>
                   </a>
                 <% }) %>
               </div>
             <% }) %>
           </div>
         <% }) %>
+
+        <% if (flatMethods && flatMethods.length > 0) { %>
+          <div class="card">
+            <h2 style="margin-bottom:6px;">Outros meios de pagamento</h2>
+            <p class="helper" style="margin-bottom:16px;">
+              Meios que não passam por bandeira nem por prazo de recebimento — a taxa é uma só por categoria.
+            </p>
+            <div class="grid">
+              <% flatMethods.forEach(m => { %>
+                <%
+                  // Categorias em que este meio pode ser cadastrado (ex: PIX só existe na SUB).
+                  const methodCategories = categories.filter(c => allowedFlatMethodsFn(c.code, [m]).length > 0);
+                %>
+                <% if (methodCategories.length > 0) { %>
+                  <a href="/rates/metodo/<%= m.code %>" class="tile">
+                    <%- include('partials/icon', { name: m.code === 'PIX' ? 'pix' : 'rates' }) %>
+                    <div class="tile-title"><%= m.name %></div>
+                    <div class="tile-desc">
+                      <%= methodCategories.map(c => c.name).join(' · ') %><% if (m.note) { %> · <%= m.note %><% } %>
+                    </div>
+                  </a>
+                <% } %>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
       </div>
     </main>
   </div>

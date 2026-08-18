@@ -19,10 +19,13 @@
   const totalPeriodLabel = document.getElementById('totalPeriodLabel');
   const totalPeriodSavingsEl = document.getElementById('totalPeriodSavings');
   const totalAnnualSavingsEl = document.getElementById('totalAnnualSavings');
+  const allocWarningEl = document.getElementById('allocWarning');
 
   let currentData = null;
-  let clientRates = {};    // { paymentTypeId: percentString } - taxa que o cliente paga hoje
-  let clientPercents = {}; // { paymentTypeId: percentString } - % do faturamento do cliente nesse tipo
+  // Chaveados pelo `key` que o servidor manda ('pt-12', 'fm-1'). O id cru não serve:
+  // tipos de pagamento e meios sem bandeira vêm de tabelas diferentes e colidiriam.
+  let clientRates = {};    // { rowKey: percentString } - taxa que o cliente paga hoje
+  let clientPercents = {}; // { rowKey: percentString } - % do faturamento nesse meio
 
   const ALLOCATION_LIMIT = 100;
   const EPSILON = 0.01; // tolerância pra arredondamento
@@ -52,6 +55,17 @@
     return currencyFmt.format(value);
   }
 
+  // As linhas são montadas com innerHTML, então tudo que vem do servidor ou do próprio
+  // usuário precisa ser escapado antes de virar HTML ou valor de atributo.
+  function esc(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function activeValue(group) {
     return group.querySelector('button.active')?.dataset.value;
   }
@@ -61,14 +75,24 @@
     btn.classList.add('active');
   }
 
-  // Soma o % já alocado em todos os tipos, exceto o informado (usado pra validar antes de aceitar um novo valor)
-  function sumAllocatedPercent(excludeId) {
-    if (!currentData) return 0;
+  // Débito/Crédito (dependem de prazo e bandeira) + PIX (taxa única da categoria),
+  // na ordem em que aparecem na tabela.
+  function currentRows() {
+    if (!currentData) return [];
+    return [
+      ...(currentData.paymentTypes || []),
+      ...(currentData.flatMethods || []),
+    ];
+  }
+
+  // Soma o % já alocado em todas as linhas, exceto a informada (usado pra validar
+  // antes de aceitar um novo valor).
+  function sumAllocatedPercent(excludeKey) {
     let total = 0;
-    currentData.paymentTypes.forEach(pt => {
-      if (excludeId !== undefined && String(pt.id) === String(excludeId)) return;
-      if (pt.gp4_rate === null) return;
-      total += parseBRNumber(clientPercents[pt.id] ?? '') || 0;
+    currentRows().forEach(row => {
+      if (excludeKey !== undefined && row.key === excludeKey) return;
+      if (row.gp4_rate === null) return;
+      total += parseBRNumber(clientPercents[row.key] ?? '') || 0;
     });
     return total;
   }
@@ -102,9 +126,20 @@
     renderTable();
   });
 
+  // Entregue pelo servidor num data-attribute (em vez de <script> inline, que exigiria
+  // afrouxar a Content-Security-Policy).
+  const RESTRICTED_PRAZOS_BY_CATEGORY = (function () {
+    const el = document.getElementById('calcConfig');
+    try {
+      return JSON.parse(el?.dataset.restrictedPrazos || '{}');
+    } catch (err) {
+      return {};
+    }
+  })();
+
   function applyPrazoRestriction() {
     const catCode = activeValue(categoryGroup);
-    const restricted = (window.RESTRICTED_PRAZOS_BY_CATEGORY && window.RESTRICTED_PRAZOS_BY_CATEGORY[catCode]) || [];
+    const restricted = RESTRICTED_PRAZOS_BY_CATEGORY[catCode] || [];
     const buttons = [...prazoGroup.querySelectorAll('button')];
     buttons.forEach(b => {
       b.style.display = restricted.includes(b.dataset.value) ? 'none' : '';
@@ -130,9 +165,10 @@
       return;
     }
     currentData = await res.json();
-    clientRates = {};
-    clientPercents = {};
 
+    // O que o vendedor já digitou NÃO é apagado ao trocar prazo/bandeira/categoria: as
+    // chaves são estáveis. O PIX em especial não depende de prazo nem de bandeira, então
+    // limpar tudo faria a linha dele sumir sem motivo ao comparar D+1 com D+30.
     renderTable();
   }
 
@@ -154,23 +190,22 @@
     summaryVolume.textContent = formatCurrency(volume);
 
     const totalPercentAllocated = sumAllocatedPercent();
-    const allocationFull = totalPercentAllocated >= (ALLOCATION_LIMIT - EPSILON);
 
     let totalPeriodSavings = 0;
     let totalAnnualSavings = 0;
     let anyRowComputed = false;
 
     ratesBody.innerHTML = '';
-    currentData.paymentTypes.forEach(pt => {
+    currentRows().forEach(row => {
       const tr = document.createElement('tr');
 
-      const gp4Rate = pt.gp4_rate; // decimal or null
-      const clientRateStr = clientRates[pt.id] ?? '';
+      const gp4Rate = row.gp4_rate; // decimal ou null
+      const clientRateStr = clientRates[row.key] ?? '';
       const clientRateDecimal = clientRateStr !== '' ? parseBRNumber(clientRateStr) / 100 : NaN;
 
-      const percentStr = clientPercents[pt.id] ?? '';
+      const percentStr = clientPercents[row.key] ?? '';
       const ownPercentValue = parseBRNumber(percentStr) || 0;
-      // Em branco = cliente não usa esse tipo de pagamento, então a fatia de volume é 0.
+      // Em branco = cliente não usa esse meio de pagamento, então a fatia de volume é 0.
       const percentDecimal = percentStr !== '' ? (ownPercentValue / 100) : 0;
 
       const diff = (gp4Rate !== null && !Number.isNaN(clientRateDecimal)) ? (clientRateDecimal - gp4Rate) : NaN;
@@ -188,23 +223,25 @@
         ? `<span class="badge ${diff >= 0 ? 'positive' : 'negative'}">${formatPercent(diff)}</span>`
         : '—';
 
-      // Uma vez que o rateio bateu 100%, os campos ainda vazios/zerados ficam bloqueados
-      // (o que já tem valor continua editável, pra permitir corrigir).
-      const percentLocked = gp4Rate !== null && allocationFull && ownPercentValue <= 0;
-      const percentDisabled = gp4Rate === null || percentLocked;
+      // Nada de bloquear campo ao bater 100%: para redistribuir o rateio era preciso
+      // zerar outra linha antes, o que travava a edição. Agora tudo continua editável e
+      // quem avisa que a conta não fecha é o aviso acima dos totais.
+      const percentDisabled = gp4Rate === null;
 
       tr.dataset.hasPercent = (percentStr !== '' && ownPercentValue > 0) ? '1' : '0';
 
       tr.innerHTML = `
-        <td>${pt.name}</td>
+        <td>${esc(row.name)}${row.note ? `<div class="row-note">${esc(row.note)}</div>` : ''}</td>
         <td class="mono">${gp4Rate !== null ? formatPercent(gp4Rate) : '<span style="color:var(--text-muted);">não cadastrada</span>'}</td>
         <td class="mono">
           <input type="text" inputmode="decimal" class="mono client-rate-input" style="text-align:right;max-width:110px;margin-left:auto;"
-            placeholder="0,00" data-id="${pt.id}" value="${clientRateStr}" ${gp4Rate === null ? 'disabled' : ''}>
+            placeholder="0,00" data-key="${esc(row.key)}" value="${esc(clientRateStr)}"
+            aria-label="Taxa atual do cliente em ${esc(row.name)}" ${gp4Rate === null ? 'disabled' : ''}>
         </td>
         <td class="mono">
           <input type="text" inputmode="decimal" class="mono client-percent-input" style="text-align:right;max-width:90px;margin-left:auto;"
-            placeholder="0,00" data-id="${pt.id}" value="${percentStr}" ${percentDisabled ? 'disabled title="Rateio já atingiu 100%"' : ''}>
+            placeholder="0,00" data-key="${esc(row.key)}" value="${esc(percentStr)}"
+            aria-label="Percentual de vendas em ${esc(row.name)}" ${percentDisabled ? 'disabled' : ''}>
         </td>
         <td class="mono">${diffBadge}</td>
         <td class="mono">${formatCurrency(periodSavings)}</td>
@@ -213,33 +250,39 @@
       ratesBody.appendChild(tr);
     });
 
+    // A tabela é reconstruída a cada tecla, então o foco e a posição do cursor precisam
+    // voltar exatamente para onde estavam — senão não dá para corrigir o meio de um número.
+    function restoreCursor(selector, key, caret) {
+      const el = ratesBody.querySelector(`${selector}[data-key="${key}"]`);
+      if (!el) return;
+      el.focus();
+      const pos = Math.min(caret ?? el.value.length, el.value.length);
+      el.setSelectionRange(pos, pos);
+    }
+
     [...ratesBody.querySelectorAll('.client-rate-input')].forEach(input => {
       input.addEventListener('input', e => {
-        clientRates[e.target.dataset.id] = e.target.value;
+        const key = e.target.dataset.key;
+        const caret = e.target.selectionStart;
+        clientRates[key] = e.target.value;
         renderTable();
-        const el = ratesBody.querySelector(`.client-rate-input[data-id="${e.target.dataset.id}"]`);
-        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+        restoreCursor('.client-rate-input', key, caret);
       });
     });
 
     [...ratesBody.querySelectorAll('.client-percent-input')].forEach(input => {
       input.addEventListener('input', e => {
-        const id = e.target.dataset.id;
-        const newValue = parseBRNumber(e.target.value) || 0;
-        const otherTotal = sumAllocatedPercent(id);
-
-        if (otherTotal + newValue > ALLOCATION_LIMIT + EPSILON) {
-          alert('Você já atingiu 100% do rateio, favor revisar.');
-          e.target.value = clientPercents[id] ?? '';
-          return;
-        }
-
-        clientPercents[id] = e.target.value;
+        const key = e.target.dataset.key;
+        const caret = e.target.selectionStart;
+        // Passar de 100% é aceito e sinalizado no aviso, em vez de rejeitado com alert().
+        // O alert() bloqueava a página e apagava o que a pessoa tinha acabado de digitar.
+        clientPercents[key] = e.target.value;
         renderTable();
-        const el = ratesBody.querySelector(`.client-percent-input[data-id="${id}"]`);
-        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+        restoreCursor('.client-percent-input', key, caret);
       });
     });
+
+    renderAllocationWarning(totalPercentAllocated);
 
     // Totais no final da calculadora
     totalsCard.style.display = anyRowComputed || totalPercentAllocated > 0 ? 'grid' : 'none';
@@ -248,6 +291,33 @@
     totalPeriodSavingsEl.textContent = formatCurrency(totalPeriodSavings);
     totalAnnualSavingsEl.textContent = formatCurrency(totalAnnualSavings);
   }
+
+  // Antes, alocar 60%% e imprimir gerava uma proposta 40%% menor sem nenhum sinal — o único
+  // indício era a cor do total. Agora a diferença é dita com todas as letras, e o aviso sai
+  // também na impressão.
+  function renderAllocationWarning(total) {
+    const fmt = n => n.toFixed(2).replace('.', ',') + '%';
+
+    if (total <= EPSILON) {
+      allocWarningEl.style.display = 'none';
+      return;
+    }
+    if (Math.abs(total - ALLOCATION_LIMIT) < EPSILON) {
+      allocWarningEl.style.display = 'none';
+      return;
+    }
+
+    const over = total > ALLOCATION_LIMIT;
+    allocWarningEl.className = 'alloc-warning ' + (over ? 'over' : 'incomplete');
+    allocWarningEl.style.display = 'block';
+    allocWarningEl.innerHTML = over
+      ? `O rateio soma ${fmt(total)}, acima de 100%.
+         <span class="alloc-detail">Os totais abaixo estão superestimados em ${fmt(total - ALLOCATION_LIMIT)}. Revise antes de apresentar ao cliente.</span>`
+      : `O rateio soma ${fmt(total)} — faltam ${fmt(ALLOCATION_LIMIT - total)}.
+         <span class="alloc-detail">Os totais abaixo consideram só a parte alocada, então a economia real do cliente é maior do que a mostrada.</span>`;
+  }
+
+  document.getElementById('printButton')?.addEventListener('click', () => window.print());
 
   applyPrazoRestriction();
   loadRates();

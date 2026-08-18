@@ -8,10 +8,17 @@
       <div class="container">
         <p class="subtitle" style="margin-bottom:6px;"><a href="/rates" style="color:var(--primary);text-decoration:none;font-weight:600;">← Voltar</a></p>
         <h1>Taxas GP4 · <%= category.name %> · <%= brand.name %> · <%= prazo.name %></h1>
-        <p class="subtitle">Informe as taxas em porcentagem (ex: 1,98). Deixe em branco para remover uma taxa cadastrada.</p>
+        <p class="subtitle">Informe as taxas em porcentagem, com no máximo 2 casas decimais (ex: 1,98). Deixe em branco para remover uma taxa cadastrada.</p>
 
         <% if (saved) { %>
           <div class="success-msg">Taxas salvas com sucesso.</div>
+        <% } %>
+
+        <% if (errors && errors.length > 0) { %>
+          <div class="error-msg">
+            <strong>Nada foi salvo.</strong> Corrija os pontos abaixo e envie de novo:
+            <% errors.forEach(e => { %><div><%= e %></div><% }) %>
+          </div>
         <% } %>
 
         <div class="card no-print" style="padding:16px 20px;">
@@ -55,7 +62,7 @@
                     <td>
                       <input type="text" inputmode="decimal" class="mono" style="text-align:right;max-width:140px;margin-left:auto;"
                         name="rate_<%= row.id %>"
-                        value="<%= row.gp4_rate != null ? row.gp4_rate.toFixed(2).replace('.', ',') : '' %>"
+                        value="<%= row.value %>"
                         placeholder="0,00">
                     </td>
                   </tr>

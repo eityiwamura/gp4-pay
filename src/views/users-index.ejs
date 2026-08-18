@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Usuários' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'users' }) %>
+    <main class="main-content">
+      <div class="container">
+        <div class="page-head">
+          <div>
+            <h1>Usuários</h1>
+            <p class="subtitle">Administrador acessa todas as telas. Para os demais, escolha tela por tela.</p>
+          </div>
+          <a href="/users/new" class="btn accent"><%- include('partials/icon', { name: 'plus' }) %> Novo usuário</a>
+        </div>
+
+        <% if (created) { %><div class="success-msg">Usuário criado com sucesso.</div><% } %>
+        <% if (updated) { %><div class="success-msg">Usuário atualizado.</div><% } %>
+        <% if (deleted) { %><div class="success-msg">Usuário excluído.</div><% } %>
+
+        <div class="card">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>E-mail</th>
+                  <th>Papel</th>
+                  <th>Telas liberadas</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% users.forEach(u => { %>
+                  <tr<%= u.active ? '' : ' class="row-inactive"' %>>
+                    <td><strong><%= u.name %></strong><% if (u.id === user.id) { %> <span class="tag-you">você</span><% } %></td>
+                    <td><%= u.email %></td>
+                    <td><%= u.role === 'admin' ? 'Administrador' : 'Usuário comum' %></td>
+                    <td>
+                      <% if (u.role === 'admin') { %>
+                        <span class="badge positive">Todas</span>
+                      <% } else if (u.permissions.length === 0) { %>
+                        <span class="badge negative">Nenhuma</span>
+                      <% } else { %>
+                        <% u.permissions.forEach(p => { const s = screens.find(x => x.key === p); %>
+                          <span class="badge neutral"><%= s ? s.name : p %></span>
+                        <% }) %>
+                      <% } %>
+                    </td>
+                    <td><%= u.active ? 'Ativo' : 'Inativo' %></td>
+                    <td style="text-align:right;"><a href="/users/<%= u.id %>/edit" class="link-action">Editar</a></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

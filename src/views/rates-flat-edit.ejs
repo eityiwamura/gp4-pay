@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: `Taxas ${method.name}` }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'rates' }) %>
+    <main class="main-content">
+      <div class="container">
+        <p class="subtitle back-link"><a href="/rates"><%- include('partials/icon', { name: 'back' }) %> Voltar</a></p>
+        <h1>Taxas GP4 · <%= method.name %></h1>
+        <p class="subtitle">Informe a taxa em porcentagem, com no máximo 2 casas decimais (ex: 0,99). Deixe em branco para remover a taxa cadastrada.</p>
+
+        <div class="info-msg">
+          <% if (method.note) { %><%= method.note %>. <% } %>Esta taxa é única por categoria:
+          não varia por bandeira (Master/Visa/Elo) nem por prazo de recebimento.
+        </div>
+
+        <% if (saved) { %>
+          <div class="success-msg">Taxas salvas com sucesso.</div>
+        <% } %>
+
+        <% if (errors && errors.length > 0) { %>
+          <div class="error-msg">
+            <strong>Nada foi salvo.</strong> Corrija os pontos abaixo e envie de novo:
+            <% errors.forEach(e => { %><div><%= e %></div><% }) %>
+          </div>
+        <% } %>
+
+        <div class="card">
+          <form method="POST" action="/rates/metodo/<%= method.code %>">
+            <table>
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th class="mono">Taxa GP4 (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% rows.forEach(row => { %>
+                  <tr>
+                    <td><%= row.category.name %></td>
+                    <td>
+                      <input type="text" inputmode="decimal" class="mono" style="text-align:right;max-width:140px;margin-left:auto;"
+                        name="rate_<%= row.category.id %>"
+                        value="<%= row.value %>"
+                        placeholder="0,00"
+                        aria-label="Taxa GP4 de <%= method.name %> para <%= row.category.name %>">
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+            <div style="margin-top:20px;">
+              <button class="btn accent" type="submit">Salvar taxas</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

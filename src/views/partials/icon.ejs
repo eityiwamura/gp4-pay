@@ -1,0 +1,15 @@
+<%
+// Ícones monocromáticos inline (herdam currentColor). Uso: include('partials/icon', { name: 'home' })
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H10v-6h4v6h3.5a1 1 0 0 0 1-1V9.5"/>',
+  calculator: '<rect x="4" y="2.5" width="16" height="19" rx="2.5"/><path d="M8 7h8"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01"/>',
+  rates: '<path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14.5 3v4.5H19"/><path d="M8.5 12.5h7M8.5 16.5h4.5"/>',
+  users: '<path d="M15.5 20v-1.8a3.6 3.6 0 0 0-3.6-3.6H6.6A3.6 3.6 0 0 0 3 18.2V20"/><circle cx="9.25" cy="7.75" r="3.25"/><path d="M21 20v-1.8a3.6 3.6 0 0 0-2.7-3.48"/><path d="M15.25 4.7a3.25 3.25 0 0 1 0 6.1"/>',
+  logout: '<path d="M9.5 20.5H5.5a1.5 1.5 0 0 1-1.5-1.5V5a1.5 1.5 0 0 1 1.5-1.5h4"/><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9"/>',
+  printer: '<path d="M7 8.5V3.5h10v5"/><path d="M7 17.5H5.5A1.5 1.5 0 0 1 4 16v-5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 11v5a1.5 1.5 0 0 1-1.5 1.5H17"/><path d="M7 14h10v6.5H7z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  back: '<path d="m14 6-6 6 6 6"/>',
+  pix: '<path d="M12 3.2 20.8 12 12 20.8 3.2 12Z"/><path d="m9.2 9.4 2.8 2.8 2.8-2.8"/><path d="m9.2 14.6 2.8-2.8 2.8 2.8"/>',
+};
+const glyph = ICONS[name];
+%><% if (glyph) { %><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><%- glyph %></svg><% } %>

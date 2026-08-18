@@ -1,63 +1,160 @@
 # GP4 Taxas
 
-Sistema simples para:
-1. **Cadastrar as taxas GP4 Pay** (categorias SUB e SITE, prazos D+1 / D+30 / D+0, Débito e Crédito 1x a 24x).
-2. **Calculadora de economia** — o vendedor informa as taxas que o cliente já paga hoje e o sistema mostra automaticamente a diferença, a economia no período e a projeção anual, igual ao Excel de referência, mas dinâmico.
+Sistema para:
+1. **Cadastrar as taxas GP4 Pay** (categorias SUB e SITE, bandeiras Master/Visa/Elo, prazos D+1 / D+30 / D+0, Débito e Crédito 1x a 24x, além do PIX).
+2. **Calculadora de economia** — o vendedor informa as taxas que o cliente já paga hoje e o sistema mostra a diferença, a economia no período e a projeção anual.
+3. **Gestão de usuários** — cadastro de vendedores com controle de acesso por tela.
 
-Stack: Node.js + Express + PostgreSQL + EJS + JWT (mesmo padrão dos outros sistemas).
+Stack: Node.js 20 + Express + PostgreSQL + EJS + JWT.
+
+Análise técnica, pendências e roadmap: [ANALISE.md](ANALISE.md).
 
 ## Rodando localmente
 
 ```bash
 npm install
 cp .env.example .env   # edite DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
-npm run migrate        # cria as tabelas, semeia categorias/prazos/tipos e as taxas iniciais da planilha, cria o usuário admin
+npm run migrate        # cria as tabelas, semeia os cadastros e cria o usuário admin
 npm start
 ```
 
 Acesse `http://localhost:3000` e entre com o e-mail/senha definidos em `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
+O servidor **não sobe** se `DATABASE_URL` ou `JWT_SECRET` estiverem faltando, ou se o
+`JWT_SECRET` ainda for o texto de exemplo. É proposital: melhor falhar no start, com
+mensagem clara, do que quebrar no primeiro login. Gere o segredo com:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
 ## Deploy no EasyPanel
 
-1. Suba este projeto num repositório Git (GitHub).
-2. No EasyPanel, crie um serviço PostgreSQL (ou use um já existente) e copie a `DATABASE_URL`.
-3. Crie um serviço de app a partir do repositório (o `Dockerfile` já está pronto — build automático).
-4. Configure as variáveis de ambiente do serviço: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PORT` (opcional, padrão 3000).
-5. O `Dockerfile` já roda `node src/migrate.js` antes de subir o servidor — isso cria as tabelas, popula as taxas iniciais (extraídas da sua planilha `Comparativo_de_Taxas_Cliente_03jul26.xlsx`) e cria seu usuário admin no primeiro deploy. Nos deploys seguintes, a migração é segura de rodar de novo (não duplica dados).
-6. Aponte o domínio (ex: `taxas.gp4pay.iwamura.com.br` ou o que preferir) e pronto.
+1. Suba este projeto num repositório Git.
+2. No EasyPanel, crie um serviço PostgreSQL (ou use um existente) e copie a `DATABASE_URL`.
+3. Crie um serviço de app a partir do repositório — o `Dockerfile` já está pronto.
+4. Configure as variáveis: `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV=production`, `ADMIN_NAME`,
+   `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PORT` (opcional, padrão 3000).
+5. Aponte o domínio e pronto.
+
+`NODE_ENV=production` é o que liga o cookie de sessão seguro (só via HTTPS) e o HSTS.
+Não deixe de configurá-lo.
+
+### Sobre as migrações
+
+O `Dockerfile` roda `node src/migrate.js` antes de subir o servidor. A migração:
+
+- espera o Postgres ficar disponível (até 20 tentativas) antes de desistir;
+- aplica cada arquivo de `migrations/` **uma única vez**, controlado pela tabela `schema_migrations`;
+- só aplica a carga inicial de taxas se a tabela `rates` estiver vazia — deploys seguintes
+  nunca sobrescrevem taxas ajustadas à mão;
+- cria o usuário admin apenas se aquele e-mail ainda não existir.
+
+O primeiro deploy depois desta versão vai aplicar as migrações `003` a `006` e registrar as
+antigas. A `006` **remove** as colunas `annual_multiplier` e `period_label` de `prazos`, que
+eram código morto (detalhes em ANALISE.md, item 1.4). **Todos os usuários serão desconectados uma vez** (o formato do token
+mudou) e precisarão entrar de novo. As taxas já cadastradas são preservadas.
+
+Para uma migração nova, crie `migrations/007_xxx.sql` — ela é detectada e aplicada sozinha.
 
 ## Como usar
 
-### Cadastro de taxas (perfil admin)
-Menu **Cadastro de Taxas** → escolha categoria (SUB/SITE) e prazo (D+1/D+30/D+0) → preencha a taxa GP4 (%) de cada tipo de pagamento → Salvar. As taxas já vêm pré-carregadas com os valores da sua planilha de referência — é só ajustar quando precisar.
+### Cadastro de taxas
+Menu **Cadastro de Taxas** → escolha categoria (SUB/SITE), bandeira e prazo → preencha a taxa
+GP4 (%) de cada tipo de pagamento → Salvar. Deixe em branco para remover uma taxa.
 
-Obs: percebi que na planilha original o bloco "SITE D+0" usa multiplicador x12 (igual ao D+30) para projetar o valor anual, mesmo sendo "no mesmo dia". Deixei o D+0 configurado no sistema com multiplicador x365 (lógica de "por dia"), que parece ser o correto. Se você quiser manter igual à planilha original, é só me pedir que eu ajusto o multiplicador de D+0 na tabela `prazos`.
+Valores precisam ficar entre 0% e 100% e ter **no máximo 2 casas decimais** — é o que o banco
+guarda, e recusar é melhor do que arredondar calado um número que vai para a proposta do
+cliente. Se qualquer campo estiver inválido, **nada é salvo** e a tela volta com o erro
+apontado, preservando o que você digitou.
 
-### Calculadora (todos os usuários)
-Menu **Calculadora** → escolha categoria e prazo → informe o valor médio de vendas do cliente → preencha, para cada tipo de pagamento, a taxa que o cliente já paga hoje. O sistema calcula na hora: diferença, economia no período e economia projetada em 1 ano. Dá pra usar o botão **Imprimir / Salvar PDF** para gerar um resumo limpo pra mostrar ao cliente.
+O campo lê no padrão brasileiro: vírgula é decimal, ponto é milhar. `1,98` é 1,98%; `1.985`
+é lido como 1985% e será recusado por estar fora da faixa.
+
+#### Histórico
+
+**Ver histórico** (no topo da tela) mostra toda alteração de taxa já feita: quando, quem
+alterou, qual taxa e de quanto para quanto. Dá para filtrar por categoria.
+
+Serve para reconstruir a taxa que valia quando uma proposta antiga foi montada. Cobre também
+o PIX. Salvar o formulário sem editar nada não gera registro.
+
+#### PIX e outros meios sem bandeira
+
+O PIX não passa por bandeira nem por prazo: cai sempre em D+1 e não parcela. Por isso ele fica
+no card **Outros meios de pagamento**, no fim da tela — uma taxa por categoria, e só. Hoje o PIX
+só existe na SUB (é da maquininha), então aparece um campo só.
+
+A taxa dele **nasce em branco**: não há carga inicial, porque nenhum número inventado deve ir
+para a proposta do cliente. Enquanto estiver vazia, a calculadora mostra "não cadastrada" na
+linha do PIX.
+
+Para acrescentar outro meio sem bandeira no futuro, basta uma linha em `FLAT_METHODS`
+(`src/migrate.js`) e, se ele não valer para todas as categorias, a restrição em
+`src/lib/flatMethodRules.js`. Não precisa mexer em schema.
+
+### Calculadora
+Menu **Calculadora** → escolha categoria, prazo e bandeira → informe o valor médio de vendas →
+para cada tipo de pagamento, preencha a taxa que o cliente paga hoje e o **% de Vendas** (a
+fatia do faturamento que passa por ali; deixe em branco se ele não usa). O sistema calcula
+diferença, economia no período e projeção anual.
+
+O PIX entra como mais uma linha da tabela: participa do rateio de "% de Vendas" e soma nos
+totais. Trocar prazo ou bandeira não mexe nele.
+
+O que você digitou **não é apagado** ao trocar categoria, prazo ou bandeira — dá para comparar
+D+1 com D+30 para o mesmo cliente sem redigitar tudo.
+
+Se a soma de "% de Vendas" não fechar 100%, aparece um aviso acima dos totais dizendo quanto
+falta (ou quanto passou) e o que isso significa para os números. **Esse aviso também sai na
+impressão** — proposta calculada sobre rateio errado não deve chegar ao cliente sem
+sinalização.
+
+O botão **Imprimir / Salvar PDF** gera um resumo limpo — linhas sem "% de Vendas" preenchido
+não aparecem na impressão.
+
+### Usuários
+Menu **Usuários** (visível para quem tem a permissão).
+
+- **Administrador** acessa todas as telas, sempre.
+- **Usuário comum** acessa apenas as telas marcadas no cadastro dele.
+
+O bloqueio vale no servidor, não só no menu: quem não tem a permissão recebe 403 mesmo
+digitando a URL direto.
+
+Regras de proteção:
+- ninguém rebaixa ou desativa a própria conta;
+- o último administrador ativo não pode ser rebaixado nem excluído;
+- um usuário comum com permissão de Usuários gerencia apenas outros usuários comuns — não
+  cria nem edita administradores.
+
+Trocar a senha ou desativar uma conta derruba as sessões daquele usuário imediatamente, em
+todos os dispositivos. Mudanças de permissão também valem na hora, sem precisar relogar.
+
+Para bloquear alguém temporariamente, desmarque **Conta ativa** em vez de excluir.
 
 ## Estrutura
 
 ```
 src/
-  server.js          → entrada da aplicação
-  db.js              → pool de conexão PostgreSQL
-  migrate.js         → cria schema + seed (categorias, prazos, tipos, taxas, admin)
-  middleware/auth.js → autenticação JWT via cookie
-  routes/            → auth, rates (admin), calculator
-  views/             → EJS
-  public/            → CSS e JS do front
-migrations/001_init.sql → schema SQL puro
+  config.js            → valida as variáveis de ambiente e aborta se faltar alguma
+  server.js            → entrada da aplicação (helmet, CSP, error handler, /health)
+  db.js                → pool de conexão PostgreSQL
+  migrate.js           → migrações versionadas + carga inicial
+  middleware/auth.js   → sessão JWT, carga do usuário e checagem de permissão
+  lib/
+    asyncHandler.js    → captura Promise rejeitada nos handlers (Express 4 não faz isso)
+    screens.js         → telas do sistema e regra de permissão
+    paymentTypeRules.js→ SITE não opera acima de 18x
+    prazoRules.js      → SUB não opera D+0
+    flatMethodRules.js → PIX só existe na SUB
+  routes/              → auth, rates, calculator, users
+  views/               → EJS
+  public/              → CSS e JS do front
+migrations/            → schema SQL, aplicado uma vez cada
 ```
 
-## Usuários adicionais (vendedores)
+## Endpoint de saúde
 
-Por enquanto a criação de novos usuários é manual, via SQL:
-
-```sql
--- gere o hash da senha com bcrypt antes de rodar (ex: usando um script Node com bcryptjs)
-INSERT INTO users (name, email, password_hash, role)
-VALUES ('Nome do Vendedor', 'vendedor@exemplo.com', '<hash_bcrypt>', 'vendedor');
-```
-
-Se preferir, posso adicionar uma tela de gestão de usuários dentro do próprio sistema.
+`GET /health` (sem autenticação) responde `200 {"status":"ok"}` ou `503` se o banco não
+responder. É o que o `HEALTHCHECK` do container consulta.

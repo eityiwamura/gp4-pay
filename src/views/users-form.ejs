@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: formUser.id ? 'Editar usuário' : 'Novo usuário' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'users' }) %>
+    <main class="main-content">
+      <div class="container container-narrow">
+        <p class="subtitle back-link"><a href="/users"><%- include('partials/icon', { name: 'back' }) %> Voltar para usuários</a></p>
+        <h1><%= formUser.id ? 'Editar usuário' : 'Novo usuário' %></h1>
+        <p class="subtitle">
+          <%= formUser.id ? 'Deixe a senha em branco para mantê-la como está.' : `Defina uma senha de pelo menos ${minPassword} caracteres.` %>
+        </p>
+
+        <% if (saved) { %><div class="success-msg">Alterações salvas.</div><% } %>
+        <% if (errors.length > 0) { %>
+          <div class="error-msg">
+            <% errors.forEach(e => { %><div><%= e %></div><% }) %>
+          </div>
+        <% } %>
+
+        <form method="POST" action="<%= formUser.id ? `/users/${formUser.id}` : '/users' %>">
+          <div class="card">
+            <div class="form-row">
+              <label for="name">Nome</label>
+              <input type="text" id="name" name="name" value="<%= formUser.name %>" maxlength="120" required autofocus>
+            </div>
+
+            <div class="form-row">
+              <label for="email">E-mail</label>
+              <input type="email" id="email" name="email" value="<%= formUser.email %>" maxlength="160" required>
+            </div>
+
+            <div class="form-row" style="margin-bottom:0;">
+              <label for="password">Senha<%= formUser.id ? ' (opcional)' : '' %></label>
+              <input type="password" id="password" name="password" minlength="<%= minPassword %>"
+                autocomplete="new-password" <%= formUser.id ? '' : 'required' %>
+                placeholder="<%= formUser.id ? 'Deixe em branco para não alterar' : `Mínimo de ${minPassword} caracteres` %>">
+              <% if (formUser.id) { %>
+                <div class="helper">Trocar a senha desconecta o usuário de todos os dispositivos.</div>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 style="margin-top:0;">Acesso</h2>
+
+            <div class="form-row">
+              <label for="role">Papel</label>
+              <select id="role" name="role" <%= user.role === 'admin' ? '' : 'disabled' %>>
+                <option value="vendedor" <%= formUser.role === 'vendedor' ? 'selected' : '' %>>Usuário comum</option>
+                <option value="admin" <%= formUser.role === 'admin' ? 'selected' : '' %>>Administrador</option>
+              </select>
+              <% if (user.role !== 'admin') { %>
+                <input type="hidden" name="role" value="vendedor">
+                <div class="helper">Só um administrador pode definir o papel de outro usuário.</div>
+              <% } %>
+            </div>
+
+            <fieldset class="perm-fieldset" id="permFieldset">
+              <legend>Telas liberadas</legend>
+              <p class="helper" id="permHint" style="margin-top:0;margin-bottom:12px;"></p>
+              <% screens.forEach(s => { %>
+                <label class="perm-item">
+                  <input type="checkbox" name="screens" value="<%= s.key %>"
+                    <%= formUser.permissions.includes(s.key) ? 'checked' : '' %>>
+                  <span>
+                    <span class="perm-name"><%= s.name %></span>
+                    <span class="perm-desc"><%= s.description %></span>
+                  </span>
+                </label>
+              <% }) %>
+            </fieldset>
+
+            <div class="form-row" style="margin-top:18px;margin-bottom:0;">
+              <label class="perm-item" style="border:none;padding-left:0;">
+                <input type="checkbox" name="active" <%= formUser.active ? 'checked' : '' %>
+                  <%= formUser.id === user.id ? 'disabled' : '' %>>
+                <span>
+                  <span class="perm-name">Conta ativa</span>
+                  <span class="perm-desc">
+                    <%= formUser.id === user.id
+                      ? 'Você não pode desativar a sua própria conta.'
+                      : 'Desmarque para bloquear o acesso sem apagar o usuário.' %>
+                  </span>
+                </span>
+              </label>
+              <% if (formUser.id === user.id) { %><input type="hidden" name="active" value="on"><% } %>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn accent" type="submit">Salvar</button>
+            <a href="/users" class="btn secondary">Cancelar</a>
+          </div>
+        </form>
+
+        <% if (formUser.id && formUser.id !== user.id) { %>
+          <form method="POST" action="/users/<%= formUser.id %>/delete" class="danger-zone"
+            data-confirm="Excluir <%= formUser.name %> definitivamente? Esta ação não pode ser desfeita.">
+            <div>
+              <strong>Excluir usuário</strong>
+              <div class="helper">Remove a conta em definitivo. Para bloquear temporariamente, desmarque "Conta ativa".</div>
+            </div>
+            <button class="btn danger" type="submit">Excluir</button>
+          </form>
+        <% } %>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/users-form.js"></script>
+</body>
+</html>

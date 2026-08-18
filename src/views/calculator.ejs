@@ -69,9 +69,10 @@
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;" class="no-print">
             <h2 style="margin:0;">Comparativo por tipo de pagamento</h2>
-            <button class="btn secondary" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+            <button class="btn secondary" type="button" id="printButton"><%- include('partials/icon', { name: 'printer' }) %> Imprimir / Salvar PDF</button>
           </div>
           <p class="helper" style="margin-bottom:14px;">Preencha "% de Vendas" com a fatia do faturamento do cliente que passa por cada tipo de pagamento. Se ele não usa determinado tipo, deixe em branco.</p>
+          <div class="table-scroll">
           <table id="ratesTable">
             <thead>
               <tr>
@@ -88,7 +89,10 @@
               <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Carregando taxas...</td></tr>
             </tbody>
           </table>
+          </div>
         </div>
+
+        <div class="alloc-warning" id="allocWarning" style="display:none;" role="status"></div>
 
         <div class="summary-card" id="totalsCard" style="display:none;">
           <div>
@@ -108,7 +112,7 @@
     </main>
   </div>
 
-  <script>window.RESTRICTED_PRAZOS_BY_CATEGORY = <%- JSON.stringify(restrictedPrazosByCategory) %>;</script>
+  <div id="calcConfig" hidden data-restricted-prazos="<%= JSON.stringify(restrictedPrazosByCategory) %>"></div>
   <script src="/js/calculator.js"></script>
 </body>
 </html>

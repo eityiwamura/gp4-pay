@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Histórico de Taxas' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'rates' }) %>
+    <main class="main-content">
+      <div class="container">
+        <p class="subtitle back-link"><a href="/rates"><%- include('partials/icon', { name: 'back' }) %> Voltar</a></p>
+        <h1>Histórico de Taxas</h1>
+        <p class="subtitle">Toda alteração de taxa fica registrada aqui, com quem alterou e o valor anterior.</p>
+
+        <div class="card no-print" style="padding:16px 20px;">
+          <label style="margin-bottom:8px;">Categoria</label>
+          <div class="pill-group">
+            <a href="/rates/historico" style="text-decoration:none;">
+              <button type="button" class="<%= category ? '' : 'active' %>">Todas</button>
+            </a>
+            <% categories.forEach(c => { %>
+              <a href="/rates/historico?categoria=<%= c.code %>" style="text-decoration:none;">
+                <button type="button" class="<%= category && category.code === c.code ? 'active' : '' %>"><%= c.name %></button>
+              </a>
+            <% }) %>
+          </div>
+        </div>
+
+        <div class="card">
+          <% if (entries.length === 0) { %>
+            <p class="helper" style="margin:0;">
+              <% if (category) { %>
+                Nenhuma alteração registrada para a categoria <%= category.name %>.
+              <% } else { %>
+                Nenhuma alteração registrada ainda. O histórico começa a partir das próximas edições.
+              <% } %>
+            </p>
+          <% } else { %>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Quando</th>
+                    <th>Quem</th>
+                    <th>Taxa</th>
+                    <th class="mono">De</th>
+                    <th class="mono">Para</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% entries.forEach(e => { %>
+                    <tr>
+                      <td class="mono" style="white-space:nowrap;">
+                        <%= new Date(e.changed_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) %>
+                      </td>
+                      <td><%= e.user_name %></td>
+                      <td><%= e.label %></td>
+                      <td class="mono">
+                        <% if (e.old === '') { %>
+                          <span class="badge neutral">nova</span>
+                        <% } else { %><%= e.old %>%<% } %>
+                      </td>
+                      <td class="mono">
+                        <% if (e.new === '') { %>
+                          <span class="badge negative">removida</span>
+                        <% } else { %><strong><%= e.new %>%</strong><% } %>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+
+            <% if (hasMore) { %>
+              <p class="helper" style="margin-top:14px;">
+                Mostrando as <%= limit %> alterações mais recentes. Há registros mais antigos além destes.
+              </p>
+            <% } %>
+          <% } %>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

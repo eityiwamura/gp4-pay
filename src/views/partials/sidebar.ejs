@@ -3,30 +3,40 @@
     <a href="/" class="brand" style="text-decoration:none;color:white;">
       <span>GP4</span><span class="dot">·</span><span class="label">Taxas</span>
     </a>
-    <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Recolher/expandir menu">
-      <span id="sidebarToggleIcon">‹</span>
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" title="Recolher/expandir menu" aria-label="Recolher ou expandir o menu">
+      <span id="sidebarToggleIcon" aria-hidden="true">‹</span>
     </button>
   </div>
 
   <nav class="sidebar-nav">
     <a href="/" class="<%= typeof active !== 'undefined' && active === 'home' ? 'active' : '' %>">
-      <span class="icon">🏠</span><span class="label">Início</span>
+      <%- include('icon', { name: 'home' }) %><span class="label">Início</span>
     </a>
-    <a href="/calculator" class="<%= typeof active !== 'undefined' && active === 'calculator' ? 'active' : '' %>">
-      <span class="icon">🧮</span><span class="label">Calculadora</span>
-    </a>
-    <% if (user && user.role === 'admin') { %>
+    <% if (can(user, 'calculator')) { %>
+      <a href="/calculator" class="<%= typeof active !== 'undefined' && active === 'calculator' ? 'active' : '' %>">
+        <%- include('icon', { name: 'calculator' }) %><span class="label">Calculadora</span>
+      </a>
+    <% } %>
+    <% if (can(user, 'rates')) { %>
       <a href="/rates" class="<%= typeof active !== 'undefined' && active === 'rates' ? 'active' : '' %>">
-        <span class="icon">⚙️</span><span class="label">Cadastro de Taxas</span>
+        <%- include('icon', { name: 'rates' }) %><span class="label">Cadastro de Taxas</span>
+      </a>
+    <% } %>
+    <% if (can(user, 'users')) { %>
+      <a href="/users" class="<%= typeof active !== 'undefined' && active === 'users' ? 'active' : '' %>">
+        <%- include('icon', { name: 'users' }) %><span class="label">Usuários</span>
       </a>
     <% } %>
   </nav>
 
   <div class="sidebar-footer">
-    <div class="sidebar-user"><%= user ? user.name : '' %></div>
+    <div class="sidebar-user">
+      <%= user ? user.name : '' %>
+      <% if (user && user.role === 'admin') { %><span class="sidebar-role">Administrador</span><% } %>
+    </div>
     <form method="POST" action="/logout">
       <button class="logout" type="submit">
-        <span class="icon">↪</span><span class="label">Sair</span>
+        <%- include('icon', { name: 'logout' }) %><span class="label">Sair</span>
       </button>
     </form>
   </div>
