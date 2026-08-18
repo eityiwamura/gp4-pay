@@ -27,6 +27,11 @@
         <%- include('icon', { name: 'users' }) %><span class="label">Usuários</span>
       </a>
     <% } %>
+    <% if (user && user.role === 'admin') { %>
+      <a href="/rastreabilidade" class="<%= typeof active !== 'undefined' && active === 'trace' ? 'active' : '' %>">
+        <%- include('icon', { name: 'trace' }) %><span class="label">Rastreabilidade</span>
+      </a>
+    <% } %>
   </nav>
 
   <div class="sidebar-footer">

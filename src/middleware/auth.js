@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const config = require('../config');
 const { can } = require('../lib/screens');
+const { logActivityBestEffort } = require('../lib/activityLog');
 
 // O token carrega só o id e a versão. Nome, papel e permissões vêm do banco a cada
 // requisição — assim, mudar a permissão de alguém (ou desativar a conta) tem efeito
@@ -62,6 +63,10 @@ async function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.user?.role !== 'admin') {
+    logActivityBestEffort({
+      userId: req.user?.id, userName: req.user?.name,
+      action: 'access_denied', detail: req.originalUrl, ip: req.ip,
+    });
     return res.status(403).render('error', { message: 'Acesso restrito ao administrador.' });
   }
   next();
@@ -71,6 +76,10 @@ function requireAdmin(req, res, next) {
 function requirePermission(screenKey) {
   return function (req, res, next) {
     if (can(req.user, screenKey)) return next();
+    logActivityBestEffort({
+      userId: req.user?.id, userName: req.user?.name,
+      action: 'access_denied', detail: screenKey, ip: req.ip,
+    });
     if (wantsJson(req)) return res.status(403).json({ error: 'Você não tem acesso a esta função.' });
     return res.status(403).render('error', {
       message: 'Você não tem acesso a esta tela. Fale com o administrador.',

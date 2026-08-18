@@ -317,7 +317,61 @@
          <span class="alloc-detail">Os totais abaixo consideram só a parte alocada, então a economia real do cliente é maior do que a mostrada.</span>`;
   }
 
-  document.getElementById('printButton')?.addEventListener('click', () => window.print());
+  document.getElementById('printButton')?.addEventListener('click', () => {
+    // Sinal de rastreabilidade: "fez uma simulação". Manda só os códigos de categoria/
+    // prazo/bandeira — nunca as taxas do cliente nem o volume. Fire-and-forget: não
+    // pode atrasar o print() nem quebrar a impressão se a rede falhar.
+    if (currentData) {
+      fetch('/calculator/api/log-simulation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryCode: currentData.category.code,
+          prazoCode: currentData.prazo.code,
+          brandCode: currentData.brand.code,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+    window.print();
+  });
+
+  // Garante que a proposta impressa sempre caiba em 1 folha A4, mesmo que o vendedor
+  // preencha muitos tipos de pagamento. CSS estático (fontes pequenas, tabela compacta)
+  // já cobre o caso comum, mas não é uma garantia: se o conteúdo passar do limite da
+  // página, medimos a altura real e encolhemos tudo proporcionalmente para caber —
+  // em vez de deixar o navegador criar uma 2ª folha.
+  //
+  // PRINT_MARGIN_MM precisa bater com a margem do @page em style.css.
+  const PRINT_MARGIN_MM = 10;
+  const PX_PER_MM = 96 / 25.4;
+
+  function fitToOnePage() {
+    const container = document.querySelector('.container');
+    if (!container) return;
+    container.style.transform = '';
+    container.style.width = '';
+
+    const pageHeightPx = (297 - PRINT_MARGIN_MM * 2) * PX_PER_MM;
+    const contentHeightPx = container.scrollHeight;
+    // Nunca amplia (scale > 1): só encolhe quando o conteúdo realmente não cabe.
+    const scale = Math.min(1, pageHeightPx / contentHeightPx);
+    if (scale >= 0.999) return;
+
+    container.style.transformOrigin = 'top left';
+    container.style.transform = `scale(${scale})`;
+    // Compensa a largura: sem isso, o conteúdo encolhido deixaria uma faixa em branco
+    // à direita da página em vez de ocupar a largura útil inteira.
+    container.style.width = `${100 / scale}%`;
+  }
+
+  function resetPageFit() {
+    const container = document.querySelector('.container');
+    if (container) { container.style.transform = ''; container.style.width = ''; }
+  }
+
+  window.addEventListener('beforeprint', fitToOnePage);
+  window.addEventListener('afterprint', resetPageFit);
 
   applyPrazoRestriction();
   loadRates();

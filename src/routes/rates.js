@@ -5,6 +5,7 @@ const { requireAuth, requirePermission } = require('../middleware/auth');
 const { allowedPaymentTypes, RESTRICTED_CODES_BY_CATEGORY } = require('../lib/paymentTypeRules');
 const { allowedPrazos, RESTRICTED_PRAZOS_BY_CATEGORY } = require('../lib/prazoRules');
 const { allowedFlatMethods, allowedCategoriesForMethod } = require('../lib/flatMethodRules');
+const { logActivity, logActivityBestEffort, logView } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -124,7 +125,7 @@ async function resolveTarget(req, res) {
   return { categories, prazos, brands, category, prazo, brand, paymentTypes };
 }
 
-router.get('/rates', requireAuth, requirePermission('rates'), asyncHandler(async (req, res) => {
+router.get('/rates', requireAuth, requirePermission('rates'), logView('Cadastro de Taxas'), asyncHandler(async (req, res) => {
   const { categories, prazos, brands, flatMethods } = await getLookups();
   const paymentTypes = (await pool.query('SELECT * FROM payment_types ORDER BY sort_order')).rows;
 
@@ -147,7 +148,7 @@ router.get('/rates', requireAuth, requirePermission('rates'), asyncHandler(async
 
 // --- Histórico de alteração de taxas -----------------------------------------
 
-router.get('/rates/historico', requireAuth, requirePermission('rates'), asyncHandler(async (req, res) => {
+router.get('/rates/historico', requireAuth, requirePermission('rates'), logView('Histórico de Taxas'), asyncHandler(async (req, res) => {
   const { categories } = await getLookups();
   const category = categories.find(c => c.code === req.query.categoria) || null;
 
@@ -220,6 +221,11 @@ router.get('/rates/metodo/:methodCode', requireAuth, requirePermission('rates'),
   )).rows;
   const rateMap = Object.fromEntries(existing.map(r => [r.category_id, r.gp4_rate]));
 
+  logActivityBestEffort({
+    userId: req.user.id, userName: req.user.name,
+    action: 'view_screen', detail: `Cadastro de Taxas · ${method.name}`, ip: req.ip,
+  });
+
   res.render('rates-flat-edit', {
     method,
     rows: allowedCategories.map(c => ({ category: c, value: formatRate(rateMap[c.id]) })),
@@ -259,12 +265,14 @@ router.post('/rates/metodo/:methodCode', requireAuth, requirePermission('rates')
     )).rows;
     const beforeMap = Object.fromEntries(before.map(r => [r.category_id, r.gp4_rate]));
 
+    let changedCount = 0;
     for (const { category, value } of parsed) {
       const oldRate = beforeMap[category.id] ?? null;
       const newRate = value === null ? null : value / 100;
 
       // Salvar sem editar nada não deve gerar escrita nem poluir o histórico.
       if (sameRate(oldRate, newRate)) continue;
+      changedCount++;
 
       if (newRate === null) {
         await client.query(
@@ -291,6 +299,13 @@ router.post('/rates/metodo/:methodCode', requireAuth, requirePermission('rates')
         oldRate,
         newRate,
       });
+    }
+
+    if (changedCount > 0) {
+      await logActivity({
+        userId: req.user.id, userName: req.user.name, action: 'rate_saved',
+        detail: `${method.name} (${changedCount} taxa(s) alterada(s))`, ip: req.ip,
+      }, client);
     }
 
     await client.query('COMMIT');
@@ -321,6 +336,13 @@ router.get('/rates/:categoryCode/:prazoCode/:brandCode', requireAuth, requirePer
     ...pt,
     value: formatRate(rateMap[pt.id]),
   }));
+
+  logActivityBestEffort({
+    userId: req.user.id, userName: req.user.name,
+    action: 'view_screen',
+    detail: `Cadastro de Taxas · ${category.name} · ${brand.name} · ${prazo.name}`,
+    ip: req.ip,
+  });
 
   res.render('rates-edit', {
     categories, prazos, brands, category, prazo, brand, rows,
@@ -386,12 +408,14 @@ router.post('/rates/:categoryCode/:prazoCode/:brandCode', requireAuth, requirePe
     )).rows;
     const beforeMap = Object.fromEntries(before.map(r => [r.payment_type_id, r.gp4_rate]));
 
+    let changedCount = 0;
     for (const { paymentType, value } of parsed) {
       const oldRate = beforeMap[paymentType.id] ?? null;
       const newRate = value === null ? null : value / 100;
 
       // Salvar sem editar nada não deve gerar escrita nem poluir o histórico.
       if (sameRate(oldRate, newRate)) continue;
+      changedCount++;
 
       if (newRate === null) {
         await client.query(
@@ -420,6 +444,14 @@ router.post('/rates/:categoryCode/:prazoCode/:brandCode', requireAuth, requirePe
         oldRate,
         newRate,
       });
+    }
+
+    if (changedCount > 0) {
+      await logActivity({
+        userId: req.user.id, userName: req.user.name, action: 'rate_saved',
+        detail: `${category.name} · ${brand.name} · ${prazo.name} (${changedCount} taxa(s) alterada(s))`,
+        ip: req.ip,
+      }, client);
     }
 
     await client.query('COMMIT');

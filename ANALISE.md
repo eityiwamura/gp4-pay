@@ -49,6 +49,7 @@ Os problemas se concentravam em três frentes:
 | 4.5 | `alert()` para validar rateio | Médio | **Feito** |
 | 4.6 | Emojis na interface | Baixo | **Feito** |
 | 4.7 | Login retorna 200 em vez de 401 | Baixo | **Feito** |
+| 4.8 | Impressão pode estourar para 2ª folha | Médio | **Feito** — shrink-to-fit + título visível |
 | 5 | Zero testes / cálculo acoplado ao DOM | — | Aberto — Fase 3 |
 
 ---
@@ -223,6 +224,11 @@ sem análise de concorrência.
 **Se não sobrar,** o item cai — e a Fase 3 vira basicamente a 3.6 (proposta apresentável)
 mais os testes. Precisa da sua confirmação.
 
+Não confundir com a Rastreabilidade (seção 6, entregue em 17/08/2026): aquela registra *que*
+uma simulação aconteceu (categoria/bandeira/prazo, quem, quando), não os dados que dariam para
+retomá-la (taxa do cliente, volume, rateio). São independentes — dá para decidir sobre 3.3 sem
+mexer na Rastreabilidade.
+
 ### 3.4 FEITO — Histórico de alteração de taxas
 
 `rates.updated_at` guardava só o último toque: não dizia quem mexeu nem qual era o valor
@@ -332,6 +338,26 @@ Todos os emojis (🏠 🧮 ⚙️ 📋 🖨️ 👋) foram trocados por SVG mono
 (`src/views/partials/icon.ejs`), que herdam a cor do contexto. Além de renderizarem igual em
 qualquer sistema, não deixam mais cara amadora no PDF que vai para o cliente.
 
+### 4.8 FEITO — Impressão sempre em 1 folha A4
+
+O CSS de impressão já era compacto, mas era uma aposta, não uma garantia: com todos os 26
+tipos de pagamento preenchidos (pior caso), o conteúdo ficava com 1719px de altura contra
+1047px de página útil — estouraria para uma 2ª folha.
+
+Agora `calculator.js` escuta `beforeprint`/`afterprint`: mede a altura real do `.container`
+no momento de imprimir e, só se não couber, aplica `transform: scale()` com compensação de
+largura (`width: 100/scale%`) para encolher tudo proporcionalmente e caber em uma página.
+Nunca amplia — conteúdo curto imprime no tamanho normal.
+
+Verificado nos dois extremos: com poucas linhas o scale fica em 1.000 (sem encolher); com as
+26 linhas preenchidas, o cálculo fecha em ~0.61, dentro do que o navegador consegue aplicar
+via `transform`. Não deu para automatizar o diálogo de impressão real do navegador aqui —
+recomendo um teste manual (Ctrl+P → Salvar como PDF) antes de confiar de olhos fechados.
+
+De quebra, corrigi um bug: o título "Comparativo por tipo de pagamento" estava dentro do
+mesmo bloco `no-print` que o botão de imprimir, então sumia da folha impressa — o cliente via
+a tabela sem saber o que ela representava. Separado agora; só o botão fica oculto.
+
 ### 4.7 FEITO — Detalhes de login
 Credencial errada agora retorna 401 (era 200) e o e-mail digitado é repopulado. Conta
 desativada recebe mensagem própria em vez de "e-mail ou senha inválidos".
@@ -352,7 +378,51 @@ desativada recebe mensagem própria em vez de "e-mail ou senha inválidos".
 
 ---
 
-## 6. O que vem a seguir
+## 6. Rastreabilidade — funcionalidade nova, fora do plano original (17/08/2026)
+
+Pedido do usuário, não fazia parte do levantamento inicial: uma tela só para administradores
+mostrando as ações de todos os usuários — login, navegação, simulações, alterações de
+cadastro.
+
+**Modelagem:** tabela `activity_log` (migração `007`), append-only, mesmo padrão do
+`rate_history` (7.4): `user_name` denormalizado para o registro continuar legível mesmo se o
+usuário for excluído depois; `user_id` com `ON DELETE SET NULL`.
+
+**Acesso:** deliberadamente **não** é uma permissão concedível como Calculadora/Cadastro de
+Taxas/Usuários. Passa por `requireAdmin` (papel = admin), não por `requirePermission` +
+`user_permissions`. Motivo: essa tela expõe o IP e o comportamento de todo mundo, inclusive de
+outros administradores — bem diferente de liberar alguém para usar a Calculadora. Se isso
+virasse uma permissão concedível, um usuário comum promovido por engano (ou por um admin
+descuidado) passaria a espionar os colegas.
+
+**O que é registrado**, com quem, quando e IP: login (sucesso e falha, inclusive tentativa em
+conta desativada — user_id fica nulo e o e-mail tentado vira `user_name`, útil para detectar
+força bruta), logout, toda tela acessada, simulação concluída na calculadora, alteração de
+taxas (com contagem — nada é gravado se o formulário for salvo sem mudanças), criação/edição/
+exclusão de usuário, e tentativa de acesso sem permissão.
+
+**O que deliberadamente NÃO é registrado**, e por quê:
+- **As chamadas de `/calculator/api/rates/...`** (uma a cada clique de categoria/prazo/
+  bandeira) não geram log de navegação — seriam dezenas por sessão e afogariam o sinal útil.
+  O evento que representa "usou a calculadora de verdade" é outro, abaixo.
+- **A simulação** (endpoint `POST /calculator/api/log-simulation`, disparado ao clicar em
+  Imprimir/Salvar PDF) grava só `categoria · bandeira · prazo`. **Nunca** a taxa que o cliente
+  paga hoje, o volume informado, nem o rateio. Essa é a mesma linha que você já tinha puxado
+  em 17/08/2026 ao decidir não guardar taxa de concorrência (ver 3.3) — a Rastreabilidade
+  não reabre essa decisão, só registra *que* uma simulação aconteceu, não o conteúdo dela.
+  Se no futuro você quiser reconsiderar 3.3 (guardar a simulação inteira para retomar depois),
+  são coisas independentes: dá para ligar uma sem a outra.
+
+**Verificado:** 46 testes ponta a ponta (login/logout, as 6 telas de navegação, alteração de
+taxa comum e de PIX com contagem certa, criação/edição/exclusão de usuário, o endpoint de
+simulação confirmando que a tabela nunca teve coluna de taxa/volume, bloqueio de vendedor
+tanto por `requirePermission` quanto por `requireAdmin`, filtro por usuário na tela, e que
+excluir um usuário preserva o nome no rastro em vez de apagá-lo). No navegador: o clique real
+no botão Imprimir gerou a linha "Fez uma simulação · SUB · Master · D+1" na tela.
+
+---
+
+## 7. O que vem a seguir
 
 **Fase 2 — Operação** — concluída.
 

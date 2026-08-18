@@ -4,6 +4,7 @@ const pool = require('../db');
 const asyncHandler = require('../lib/asyncHandler');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { SCREENS, parseScreens } = require('../lib/screens');
+const { logActivity, logActivityBestEffort, logView } = require('../lib/activityLog');
 
 const router = express.Router();
 
@@ -116,7 +117,7 @@ function renderForm(res, status, { user, errors, saved }) {
   });
 }
 
-router.get('/', asyncHandler(async (req, res) => {
+router.get('/', logView('Gestão de Usuários'), asyncHandler(async (req, res) => {
   res.render('users-index', {
     users: await listUsers(),
     screens: SCREENS,
@@ -148,6 +149,10 @@ router.post('/', asyncHandler(async (req, res) => {
       [data.name, data.email, hash, data.role, data.active]
     );
     await replacePermissions(client, inserted.rows[0].id, data.role, data.permissions);
+    await logActivity({
+      userId: req.user.id, userName: req.user.name, action: 'user_created',
+      detail: `${data.name} <${data.email}> (${data.role})`, ip: req.ip,
+    }, client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -171,6 +176,10 @@ router.get('/:id/edit', asyncHandler(async (req, res) => {
   if (target.role === 'admin' && req.user.role !== 'admin') {
     return res.status(403).render('error', { message: 'Apenas um administrador pode editar outro administrador.' });
   }
+  logActivityBestEffort({
+    userId: req.user.id, userName: req.user.name,
+    action: 'view_screen', detail: `Gestão de Usuários · editando ${target.name}`, ip: req.ip,
+  });
   renderForm(res, 200, { user: target, saved: req.query.saved === '1' });
 }));
 
@@ -226,6 +235,10 @@ router.post('/:id', asyncHandler(async (req, res) => {
     }
 
     await replacePermissions(client, id, data.role, data.permissions);
+    await logActivity({
+      userId: req.user.id, userName: req.user.name, action: 'user_updated',
+      detail: `${data.name} <${data.email}> (${data.role})`, ip: req.ip,
+    }, client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -261,7 +274,22 @@ router.post('/:id/delete', asyncHandler(async (req, res) => {
   }
 
   // ON DELETE CASCADE em user_permissions cuida das permissões.
-  await pool.query('DELETE FROM users WHERE id = $1', [id]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM users WHERE id = $1', [id]);
+    await logActivity({
+      userId: req.user.id, userName: req.user.name, action: 'user_deleted',
+      detail: `${target.name} <${target.email}>`, ip: req.ip,
+    }, client);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
   res.redirect('/users?deleted=1');
 }));
 

@@ -50,12 +50,13 @@ O `Dockerfile` roda `node src/migrate.js` antes de subir o servidor. A migraçã
   nunca sobrescrevem taxas ajustadas à mão;
 - cria o usuário admin apenas se aquele e-mail ainda não existir.
 
-O primeiro deploy depois desta versão vai aplicar as migrações `003` a `006` e registrar as
+O primeiro deploy depois desta versão vai aplicar as migrações `003` a `007` e registrar as
 antigas. A `006` **remove** as colunas `annual_multiplier` e `period_label` de `prazos`, que
-eram código morto (detalhes em ANALISE.md, item 1.4). **Todos os usuários serão desconectados uma vez** (o formato do token
-mudou) e precisarão entrar de novo. As taxas já cadastradas são preservadas.
+eram código morto (detalhes em ANALISE.md, item 1.4); a `007` cria a tabela `activity_log`
+usada pela Rastreabilidade. **Todos os usuários serão desconectados uma vez** (o formato do
+token mudou) e precisarão entrar de novo. As taxas já cadastradas são preservadas.
 
-Para uma migração nova, crie `migrations/007_xxx.sql` — ela é detectada e aplicada sozinha.
+Para uma migração nova, crie `migrations/008_xxx.sql` — ela é detectada e aplicada sozinha.
 
 ## Como usar
 
@@ -113,6 +114,26 @@ sinalização.
 O botão **Imprimir / Salvar PDF** gera um resumo limpo — linhas sem "% de Vendas" preenchido
 não aparecem na impressão.
 
+A proposta **sempre sai em 1 folha A4**, mesmo se muitos tipos de pagamento forem preenchidos:
+o CSS de impressão já é compacto, mas se ainda assim não couber, o sistema mede a altura real
+do conteúdo no momento de imprimir e encolhe tudo proporcionalmente — nunca amplia, só encolhe
+quando necessário.
+
+### Cadastro inicial da equipe (job único)
+
+Para cadastrar vários usuários de uma vez, em vez de criar um por um pela tela:
+
+1. Edite a lista `TEAM` em `src/scripts/seed-team.js`.
+2. Rode no ambiente com acesso ao banco de produção:
+
+```bash
+npm run seed:team
+```
+
+É idempotente — rodar de novo pula quem já existe, sem sobrescrever senha nem permissões de
+quem já ajustou a própria conta. Cada pessoa nasce com a senha padrão definida no topo do
+arquivo; oriente todo mundo a trocar no primeiro acesso (o sistema não força troca no login).
+
 ### Usuários
 Menu **Usuários** (visível para quem tem a permissão).
 
@@ -133,6 +154,30 @@ todos os dispositivos. Mudanças de permissão também valem na hora, sem precis
 
 Para bloquear alguém temporariamente, desmarque **Conta ativa** em vez de excluir.
 
+### Rastreabilidade
+
+Menu **Rastreabilidade** — visível só para administradores. Não é uma permissão que dá para
+conceder a um usuário comum (diferente de Calculadora/Cadastro de Taxas/Usuários): dar acesso
+a isso mostraria o IP e o comportamento de todo mundo, inclusive de outros administradores,
+então o acesso é fixo ao papel de admin, não ao cadastro de permissões.
+
+Registra, com data/hora, quem fez e IP:
+
+- login (com sucesso e com falha — inclusive tentativa em conta desativada);
+- saída (logout);
+- toda tela acessada (Calculadora, Cadastro de Taxas — inclusive qual combinação de
+  categoria/bandeira/prazo foi aberta —, Usuários, Histórico de Taxas, a própria
+  Rastreabilidade);
+- simulação concluída na Calculadora (ao clicar em Imprimir/Salvar PDF) — grava só a
+  categoria/bandeira/prazo usados, **nunca** as taxas do cliente nem o volume informado;
+- alteração de taxas (com a contagem de quantas mudaram; salvar sem alterar nada não gera
+  registro);
+- criação, edição e exclusão de usuários;
+- tentativa de acessar uma tela sem permissão.
+
+Dá para filtrar por usuário. Excluir um usuário não apaga o rastro dele — o nome fica gravado
+na própria linha do registro (mesmo princípio do Histórico de Taxas).
+
 ## Estrutura
 
 ```
@@ -148,7 +193,10 @@ src/
     paymentTypeRules.js→ SITE não opera acima de 18x
     prazoRules.js      → SUB não opera D+0
     flatMethodRules.js → PIX só existe na SUB
-  routes/              → auth, rates, calculator, users
+    activityLog.js     → registro de auditoria (login, navegação, simulação, alterações)
+  scripts/
+    seed-team.js       → job único de cadastro em massa (npm run seed:team)
+  routes/              → auth, rates, calculator, users, trace (Rastreabilidade)
   views/               → EJS
   public/              → CSS e JS do front
 migrations/            → schema SQL, aplicado uma vez cada

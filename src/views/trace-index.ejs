@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><%- include('partials/head', { title: 'Rastreabilidade' }) %></head>
+<body>
+  <div class="app-shell">
+    <%- include('partials/sidebar', { active: 'trace' }) %>
+    <main class="main-content">
+      <div class="container">
+        <h1>Rastreabilidade</h1>
+        <p class="subtitle">
+          Ações de todos os usuários: login, navegação entre telas, simulações na
+          calculadora e alterações de cadastro. Visível só para administradores.
+        </p>
+
+        <div class="card" style="padding:16px 20px;">
+          <label style="margin-bottom:8px;">Usuário</label>
+          <div class="pill-group" style="flex-wrap:wrap;">
+            <a href="/rastreabilidade" style="text-decoration:none;">
+              <button type="button" class="<%= filterUserId ? '' : 'active' %>">Todos</button>
+            </a>
+            <% users.forEach(u => { %>
+              <a href="/rastreabilidade?usuario=<%= u.id %>" style="text-decoration:none;">
+                <button type="button" class="<%= filterUserId === u.id ? 'active' : '' %>"><%= u.name %></button>
+              </a>
+            <% }) %>
+          </div>
+        </div>
+
+        <div class="card">
+          <% if (entries.length === 0) { %>
+            <p class="helper" style="margin:0;">Nenhuma ação registrada ainda.</p>
+          <% } else { %>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Quando</th>
+                    <th>Quem</th>
+                    <th>Ação</th>
+                    <th>Detalhe</th>
+                    <th class="mono">IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% entries.forEach(e => { %>
+                    <tr>
+                      <td class="mono" style="white-space:nowrap;">
+                        <%= new Date(e.occurred_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) %>
+                      </td>
+                      <td><%= e.user_name %></td>
+                      <td>
+                        <% if (e.action === 'login_failed' || e.action === 'access_denied') { %>
+                          <span class="badge negative"><%= actionLabels[e.action] || e.action %></span>
+                        <% } else { %>
+                          <%= actionLabels[e.action] || e.action %>
+                        <% } %>
+                      </td>
+                      <td><%= e.detail || '—' %></td>
+                      <td class="mono" style="color:var(--text-muted);"><%= e.ip_address || '—' %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+
+            <% if (hasMore) { %>
+              <p class="helper" style="margin-top:14px;">
+                Mostrando as <%= limit %> ações mais recentes<% if (filterUserId) { %> deste usuário<% } %>.
+                Há registros mais antigos além destes.
+              </p>
+            <% } %>
+          <% } %>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

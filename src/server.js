@@ -9,8 +9,10 @@ const authRoutes = require('./routes/auth');
 const ratesRoutes = require('./routes/rates');
 const calculatorRoutes = require('./routes/calculator');
 const usersRoutes = require('./routes/users');
+const traceRoutes = require('./routes/trace');
 const { requireAuth } = require('./middleware/auth');
 const { can } = require('./lib/screens');
+const { logView } = require('./lib/activityLog');
 
 const app = express();
 
@@ -67,8 +69,9 @@ app.use(authRoutes);
 app.use(ratesRoutes);
 app.use('/calculator', calculatorRoutes);
 app.use('/users', usersRoutes);
+app.use(traceRoutes);
 
-app.get('/', requireAuth, (req, res) => {
+app.get('/', requireAuth, logView('Início'), (req, res) => {
   res.render('dashboard');
 });
 
